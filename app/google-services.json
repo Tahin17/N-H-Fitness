@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "188366582577",
+    "project_id": "aegisfit-ac696",
+    "storage_bucket": "aegisfit-ac696.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:188366582577:android:b15f6b1cb9a0c00e84f610",
+        "android_client_info": {
+          "package_name": "com.aegisfit.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGGugM-U1ypDD4nxKPAP3BT-3vI3szxho"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

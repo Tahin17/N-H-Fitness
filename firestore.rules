@@ -1,0 +1,62 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validProfile() {
+      return request.resource.data.keys().hasOnly([
+          'name', 'age', 'gender', 'weightKg', 'goalWeightKg', 'heightCm',
+          'bodyFatPercent', 'activityLevel', 'dailyCalorieTarget', 'unitSystem',
+          'useStealthMode', 'xp', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.age is int
+        && request.resource.data.age >= 13
+        && request.resource.data.age <= 100
+        && request.resource.data.weightKg is number
+        && request.resource.data.weightKg >= 30
+        && request.resource.data.weightKg <= 350
+        && request.resource.data.goalWeightKg is number
+        && request.resource.data.goalWeightKg >= 30
+        && request.resource.data.goalWeightKg <= 350
+        && request.resource.data.heightCm is number
+        && request.resource.data.heightCm >= 100
+        && request.resource.data.heightCm <= 250
+        && request.resource.data.dailyCalorieTarget is int
+        && request.resource.data.dailyCalorieTarget >= 1000
+        && request.resource.data.dailyCalorieTarget <= 6000
+        && request.resource.data.xp is int
+        && request.resource.data.xp >= 0
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+    }
+
+    function validLog(userId, logId) {
+      return request.resource.data.size() <= 30
+        && request.resource.data.userId is string
+        && request.resource.data.userId == userId
+        && request.resource.data.date is int
+        && request.resource.data.date > 0
+        && logId.matches('^(workout|cardio|food|weight|creatine)_[0-9]+_[A-Za-z0-9-]+$');
+    }
+
+    match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validProfile();
+
+      match /logs/{logId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validLog(userId, logId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

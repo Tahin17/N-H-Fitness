@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">NHT Fitness</string>
+    <string name="nav_dashboard">Home</string>
+    <string name="nav_workout">Train</string>
+    <string name="nav_nutrition">Food</string>
+    <string name="nav_body">Body</string>
+    <string name="nav_skin">Care</string>
+</resources>

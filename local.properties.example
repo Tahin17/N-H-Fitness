@@ -1,0 +1,3 @@
+# Android Studio creates local.properties automatically for the Android SDK path.
+# Add a USDA FoodData Central key only if you want USDA online results.
+USDA_API_KEY=replace_with_your_own_key
