@@ -55,5 +55,9 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
+    abstract fun bindDailyCareRepository(impl: com.aegisfit.app.data.repository.DailyCareRepositoryImpl): com.aegisfit.app.domain.repository.DailyCareRepository
+
+    @Binds
+    @Singleton
     abstract fun bindDataSyncRepository(impl: DataSyncRepositoryImpl): DataSyncRepository
 }

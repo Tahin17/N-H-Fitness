@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -50,11 +51,12 @@ fun DashboardScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        if (state.showMonthDayDialog) state.selectedMonthDayStats?.let { stats ->
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        if (state.showMonthDayDialog) {
             SelectedDayBottomSheet(
-                stats = stats,
-                onDismiss = { viewModel.dismissMonthDayDialog() }
+                stats = state.selectedMonthDayStats,
+                onDismiss = { viewModel.dismissMonthDayDialog() },
+                onSaveWeight = { dayMillis, weight -> viewModel.saveWeightForDate(dayMillis, weight) }
             )
         }
 
@@ -270,11 +272,12 @@ private fun DashboardContent(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Recovery Score Dial at the top
+        // Day Progress Dial at the top
         Box(modifier = Modifier.padding(horizontal = 24.dp)) {
-            RecoveryScoreDial(
-                score = state.daily.recoveryScore,
-                hasEstimate = state.daily.hasRecoveryEstimate
+            DayProgressDial(
+                progressPercent = state.daily.dayProgressScore,
+                completedGoals = state.daily.completedGoalsCount,
+                totalGoals = state.daily.totalGoalsCount
             )
         }
         
@@ -309,8 +312,8 @@ private fun DashboardContent(
         Column(modifier = Modifier.padding(horizontal = 24.dp)) {
             when (state.selectedTab) {
                 0 -> DailyTabContent(state.daily)
-                1 -> WeeklyTabContent(state.weekly)
-                2 -> MonthlyTabContent(state.monthly, onMonthDaySelected)
+                1 -> WeeklyTabContent(state.weekly, onDaySelected = onMonthDaySelected)
+                2 -> MonthlyTabContent(state.monthly, onDaySelected = onMonthDaySelected)
             }
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -318,7 +321,11 @@ private fun DashboardContent(
 }
 
 @Composable
-private fun RecoveryScoreDial(score: Int, hasEstimate: Boolean) {
+private fun DayProgressDial(
+    progressPercent: Int,
+    completedGoals: Int,
+    totalGoals: Int = 4
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -332,7 +339,7 @@ private fun RecoveryScoreDial(score: Int, hasEstimate: Boolean) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Recovery estimate",
+                    text = "Day Progress",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
@@ -340,43 +347,47 @@ private fun RecoveryScoreDial(score: Int, hasEstimate: Boolean) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = when {
-                        !hasEstimate -> "Log water or food to calculate it"
-                        score >= 80 -> "Ready for a demanding session"
-                        score >= 60 -> "Good capacity—train as planned"
-                        score >= 40 -> "Keep the session controlled"
-                        else -> "Prioritize water, food, and rest"
+                        progressPercent == 100 -> "🎉 All daily goals completed for today!"
+                        completedGoals > 0 -> "$completedGoals of $totalGoals daily goals completed"
+                        else -> "Log food, workout, water, or weight"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (progressPercent == 100) NeonGreen else MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Hydration • nutrition • training load",
+                    text = "Calories • Workout • Hydration • Weight",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
                 )
             }
-            Spacer(modifier = Modifier.width(20.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Box(contentAlignment = Alignment.Center) {
                 val animatedScore by animateIntAsState(
-                    targetValue = if (hasEstimate) score else 0,
-                    animationSpec = tween(1500, easing = FastOutSlowInEasing),
-                    label = "recovery_score"
+                    targetValue = progressPercent,
+                    animationSpec = tween(1200, easing = FastOutSlowInEasing),
+                    label = "day_progress_score"
                 )
-                
+
+                val dialColor = when {
+                    animatedScore >= 100 -> NeonGreen
+                    animatedScore >= 50 -> NeonCyan
+                    else -> NeonAmber
+                }
+
                 CircularProgressIndicator(
                     progress = { animatedScore.toFloat() / 100f },
-                    modifier = Modifier.size(92.dp),
-                    color = NeonCyan,
-                    trackColor = NeonCyan.copy(alpha = 0.1f),
+                    modifier = Modifier.size(88.dp),
+                    color = dialColor,
+                    trackColor = dialColor.copy(alpha = 0.12f),
                     strokeWidth = 8.dp,
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-                
+
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = if (hasEstimate) "$animatedScore" else "—",
-                        style = MaterialTheme.typography.headlineMedium,
+                        text = "$animatedScore%",
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
                     )
@@ -539,7 +550,7 @@ private fun DailyTabContent(daily: DailyStats) {
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 5. Skincare Card
+    // 5. Daily Care Card
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -549,13 +560,21 @@ private fun DailyTabContent(daily: DailyStats) {
             modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(imageVector = Icons.Filled.Face, contentDescription = "Skincare", tint = NeonPurple, modifier = Modifier.size(32.dp))
+            Icon(imageVector = Icons.Filled.CheckCircle, contentDescription = "Daily Care", tint = NeonPink, modifier = Modifier.size(32.dp))
             Spacer(modifier = Modifier.width(16.dp))
-            Text(text = "Skincare", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BadgeText("AM", daily.skincareAmDone)
-                BadgeText("PM", daily.skincarePmDone)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Daily Care", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(2.dp))
+                val careText = if (daily.dailyCareTotal > 0) {
+                    "${daily.dailyCareCompleted} of ${daily.dailyCareTotal} tasks completed"
+                } else {
+                    "No care tasks added yet"
+                }
+                Text(text = careText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (daily.dailyCareTotal > 0) {
+                val isAllDone = daily.dailyCareCompleted == daily.dailyCareTotal
+                BadgeText(if (isAllDone) "All Done" else "${daily.dailyCareCompleted}/${daily.dailyCareTotal}", isAllDone)
             }
         }
     }
@@ -711,39 +730,102 @@ private fun BadgeText(label: String, isDone: Boolean) {
 }
 
 @Composable
-private fun WeeklyTabContent(weekly: WeeklyStats) {
-    // 1. 7-Day Activity Row
+private fun WeeklyTabContent(weekly: WeeklyStats, onDaySelected: (Long) -> Unit) {
+    val todayStart = DateUtils.todayStartMillis()
+    val weekStart = DateUtils.weekStartMillis()
+    val days = DateUtils.daysInRange(weekStart, DateUtils.addDays(weekStart, 6))
+    val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+    // 1. 7-Day Activity & Weight Row
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-            Text(text = "Activity", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Weekly Activity",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Tap day for summary",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
-            
-            val weekStart = DateUtils.weekStartMillis()
-            val days = DateUtils.daysInRange(weekStart, DateUtils.addDays(weekStart, 6))
-            val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 days.take(7).forEachIndexed { index, dayMillis ->
                     val isWorkoutDay = weekly.workoutDays.contains(dayMillis)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val isWeightDay = weekly.weightDays.contains(dayMillis)
+                    val isToday = dayMillis == todayStart
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onDaySelected(dayMillis) }
+                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
-                                .background(if (isWorkoutDay) NeonCyan else Color.Transparent)
-                                .border(1.dp, if (isWorkoutDay) Color.Transparent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), CircleShape),
+                                .background(
+                                    when {
+                                        isWorkoutDay -> NeonCyan
+                                        isWeightDay -> NeonAmber.copy(alpha = 0.3f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .border(
+                                    width = if (isToday) 2.dp else 1.dp,
+                                    color = when {
+                                        isToday -> NeonCyan
+                                        isWorkoutDay -> Color.Transparent
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                    },
+                                    shape = CircleShape
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             if (isWorkoutDay) {
-                                Icon(imageVector = Icons.Filled.FitnessCenter, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Icon(
+                                    imageVector = Icons.Filled.FitnessCenter,
+                                    contentDescription = null,
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            } else if (isWeightDay) {
+                                Icon(
+                                    imageVector = Icons.Filled.MonitorWeight,
+                                    contentDescription = null,
+                                    tint = NeonAmber,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = DateUtils.dayOfMonth(dayMillis).toString(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isToday) NeonCyan else MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = dayNames.getOrElse(index) { "" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = dayNames.getOrElse(index) { "" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isToday) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+                        )
                     }
                 }
             }
@@ -752,9 +834,9 @@ private fun WeeklyTabContent(weekly: WeeklyStats) {
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 2. Stats Row
+    // 2. Stats Grid
+    val avgCals = if (weekly.daysElapsed > 0) weekly.totalCalories / weekly.daysElapsed else 0.0
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        val avgCals = if (weekly.daysElapsed > 0) weekly.totalCalories / weekly.daysElapsed else 0.0
         QuickStatCard(
             title = "Avg Calories",
             value = "${avgCals.toInt()} kcal",
@@ -771,45 +853,158 @@ private fun WeeklyTabContent(weekly: WeeklyStats) {
             modifier = Modifier.weight(1f)
         )
     }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // 3. Weekly Weight Summary Card
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.MonitorWeight,
+                contentDescription = "Weekly Weight",
+                tint = NeonAmber,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Weekly Weight",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val weightText = when {
+                    weekly.latestWeightKg != null && weekly.avgWeightKg != null -> 
+                        "Latest: ${String.format("%.1f", weekly.latestWeightKg)} kg (Avg: ${String.format("%.1f", weekly.avgWeightKg)} kg)"
+                    weekly.latestWeightKg != null -> 
+                        "Latest: ${String.format("%.1f", weekly.latestWeightKg)} kg"
+                    else -> "No weight logged this week"
+                }
+                Text(
+                    text = weightText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = "${weekly.weightLogs.size} logs",
+                style = MaterialTheme.typography.labelSmall,
+                color = NeonAmber,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
 }
 
 @Composable
 private fun MonthlyTabContent(monthly: MonthlyStats, onDaySelected: (Long) -> Unit) {
-    // 1. Calendar Grid
+    val todayStart = DateUtils.todayStartMillis()
+    val daysInMonth = DateUtils.daysInCurrentMonth()
+    val monthStart = DateUtils.monthStartMillis()
+    val dayOffset = DateUtils.firstDayOfMonthDayOfWeekOffset() // 0=Mon, 6=Sun
+    val dayNames = listOf("M", "T", "W", "T", "F", "S", "S")
+
+    // 1. Calendar Grid Card
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
-            Text(text = "Workout Calendar", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Workout & Weight Calendar",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Tap day for summary",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
-            
-            val daysInMonth = DateUtils.daysInCurrentMonth()
-            val monthStart = DateUtils.monthStartMillis()
-            
-            val rows = (daysInMonth + 6) / 7
+
+            // Day of week headers
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                dayNames.forEach { name ->
+                    Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Calendar cells with correct offset
+            val totalCells = dayOffset + daysInMonth
+            val rows = (totalCells + 6) / 7
+
             for (r in 0 until rows) {
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
                     for (c in 0..6) {
-                        val dayNum = r * 7 + c + 1
-                        if (dayNum <= daysInMonth) {
+                        val cellIndex = r * 7 + c
+                        val dayNum = cellIndex - dayOffset + 1
+
+                        if (cellIndex >= dayOffset && dayNum <= daysInMonth) {
                             val dayMillis = DateUtils.addDays(monthStart, dayNum - 1)
                             val isWorkout = monthly.workoutDays.contains(dayMillis)
-                            
+                            val isWeight = monthly.weightDays.contains(dayMillis)
+                            val isToday = dayMillis == todayStart
+
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(if (isWorkout) NeonCyan else Color.Transparent)
-                                    .border(1.dp, if (isWorkout) Color.Transparent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), CircleShape)
+                                    .background(
+                                        when {
+                                            isWorkout -> NeonCyan
+                                            isWeight -> NeonAmber.copy(alpha = 0.3f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .border(
+                                        width = if (isToday) 2.dp else 1.dp,
+                                        color = when {
+                                            isToday -> NeonCyan
+                                            isWorkout -> Color.Transparent
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                        },
+                                        shape = CircleShape
+                                    )
                                     .clickable { onDaySelected(dayMillis) },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = "$dayNum",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = if (isWorkout) Color.Black else MaterialTheme.colorScheme.onSurface
+                                    fontWeight = if (isToday || isWorkout) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isWorkout) Color.Black else if (isToday) NeonCyan else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         } else {
@@ -823,7 +1018,8 @@ private fun MonthlyTabContent(monthly: MonthlyStats, onDaySelected: (Long) -> Un
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 2. Stats Row
+    // 2. Stats Grid
+    val avgCals = if (monthly.daysElapsed > 0) monthly.totalCalories / monthly.daysElapsed else 0.0
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         QuickStatCard(
             title = "Total Workouts",
@@ -833,7 +1029,6 @@ private fun MonthlyTabContent(monthly: MonthlyStats, onDaySelected: (Long) -> Un
             modifier = Modifier.weight(1f)
         )
         
-        val avgCals = if (monthly.daysElapsed > 0) monthly.totalCalories / monthly.daysElapsed else 0.0
         QuickStatCard(
             title = "Avg Calories",
             value = "${avgCals.toInt()} kcal",
@@ -841,6 +1036,62 @@ private fun MonthlyTabContent(monthly: MonthlyStats, onDaySelected: (Long) -> Un
             color = NeonRed,
             modifier = Modifier.weight(1f)
         )
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // 3. Monthly Weight Progress Card
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.MonitorWeight,
+                contentDescription = "Monthly Weight Progress",
+                tint = NeonCyan,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Monthly Weight Progress",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val weightProgressText = when {
+                    monthly.startWeightKg != null && monthly.latestWeightKg != null ->
+                        "Start: ${String.format("%.1f", monthly.startWeightKg)} kg → Latest: ${String.format("%.1f", monthly.latestWeightKg)} kg"
+                    monthly.latestWeightKg != null ->
+                        "Latest: ${String.format("%.1f", monthly.latestWeightKg)} kg"
+                    else -> "No weight logged this month"
+                }
+                Text(
+                    text = weightProgressText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (monthly.weightChangeKg != null) {
+                val change = monthly.weightChangeKg
+                val changeStr = if (change >= 0) "+${String.format("%.1f", change)} kg" else "${String.format("%.1f", change)} kg"
+                val changeColor = if (change <= 0) NeonGreen else NeonAmber
+                Text(
+                    text = changeStr,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = changeColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
     }
 }
 
@@ -868,8 +1119,15 @@ private fun QuickStatCard(title: String, value: String, icon: androidx.compose.u
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SelectedDayBottomSheet(stats: SelectedDayStats, onDismiss: () -> Unit) {
-    val sheetState = rememberModalBottomSheetState()
+private fun SelectedDayBottomSheet(
+    stats: SelectedDayStats?,
+    onDismiss: () -> Unit,
+    onSaveWeight: (Long, Double) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showInlineWeightEntry by remember { mutableStateOf(false) }
+    var weightInput by remember { mutableStateOf("") }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -881,24 +1139,150 @@ private fun SelectedDayBottomSheet(stats: SelectedDayStats, onDismiss: () -> Uni
                 .fillMaxWidth()
                 .padding(24.dp)
                 .padding(bottom = 32.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-            Text(text = "Day Summary", style = MaterialTheme.typography.headlineMedium, color = NeonCyan, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            BottomSheetStatRow(icon = Icons.Filled.LocalFireDepartment, label = "Calories Consumed", value = "${stats.calories.toInt()} kcal", color = NeonRed)
-            BottomSheetStatRow(icon = Icons.Filled.DirectionsRun, label = "Cardio Calories", value = "${stats.cardioCaloriesBurned.toInt()} kcal", color = NeonPurple)
-            if (stats.weightKg != null) {
-                BottomSheetStatRow(icon = Icons.Filled.MonitorWeight, label = "Weight", value = "${String.format("%.1f", stats.weightKg)} kg", color = NeonAmber)
-            }
-            BottomSheetStatRow(icon = Icons.Filled.WaterDrop, label = "Water", value = "${stats.waterMl} mL", color = NeonCyan)
-            BottomSheetStatRow(icon = Icons.Filled.FitnessCenter, label = "Workout Sets", value = "${stats.completedSets}", color = NeonAmber)
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Skincare", style = MaterialTheme.typography.titleMedium, color = NeonPurple, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                BadgeText("AM Routine", stats.skincareAmDone)
-                BadgeText("PM Routine", stats.skincarePmDone)
+            if (stats == null || stats.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = NeonCyan)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Loading day summary...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                Text(
+                    text = stats.formattedDate,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = NeonCyan,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Daily Summary & Activity",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Stats rows
+                BottomSheetStatRow(
+                    icon = Icons.Filled.LocalFireDepartment,
+                    label = "Calories Consumed",
+                    value = "${stats.calories.toInt()} / ${stats.calorieTarget} kcal",
+                    color = NeonRed
+                )
+
+                BottomSheetStatRow(
+                    icon = Icons.Filled.FitnessCenter,
+                    label = "Strength Workout Sets",
+                    value = "${stats.completedSets} sets (${stats.weightliftingCaloriesBurned.toInt()} kcal)",
+                    color = NeonAmber
+                )
+
+                BottomSheetStatRow(
+                    icon = Icons.Filled.DirectionsRun,
+                    label = "Cardio Calories",
+                    value = "${stats.cardioCaloriesBurned.toInt()} kcal",
+                    color = NeonPurple
+                )
+
+                BottomSheetStatRow(
+                    icon = Icons.Filled.WaterDrop,
+                    label = "Water Hydration",
+                    value = "${stats.waterMl} / ${stats.waterGoalMl} mL",
+                    color = NeonCyan
+                )
+
+                // Weight section with inline edit
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(imageVector = Icons.Filled.MonitorWeight, contentDescription = "Weight", tint = NeonAmber, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Weight", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            text = if (stats.weightKg != null) "${String.format("%.1f", stats.weightKg)} kg" else "Not logged for this day",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonAmber
+                        )
+                    }
+                    TextButton(onClick = { showInlineWeightEntry = !showInlineWeightEntry }) {
+                        Text(if (stats.weightKg != null) "Edit" else "+ Log", color = NeonCyan)
+                    }
+                }
+
+                AnimatedVisibility(visible = showInlineWeightEntry) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = weightInput,
+                            onValueChange = { value ->
+                                if (value.length <= 6 && value.count { it == '.' } <= 1 && value.all { it.isDigit() || it == '.' }) {
+                                    weightInput = value
+                                }
+                            },
+                            label = { Text("Weight (kg)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                val w = weightInput.toDoubleOrNull()
+                                if (w != null && w in 30.0..350.0) {
+                                    onSaveWeight(stats.dateMillis, w)
+                                    showInlineWeightEntry = false
+                                    weightInput = ""
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = Color.Black)
+                        ) {
+                            Text("Save")
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Daily Care & Tasks", style = MaterialTheme.typography.titleMedium, color = NeonPink, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                if (stats.dailyCareTotal > 0) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${stats.dailyCareCompleted} of ${stats.dailyCareTotal} completed",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        BadgeText(
+                            label = if (stats.dailyCareCompleted == stats.dailyCareTotal) "Complete" else "In Progress",
+                            isDone = stats.dailyCareCompleted == stats.dailyCareTotal
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "No care tasks recorded for this day",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

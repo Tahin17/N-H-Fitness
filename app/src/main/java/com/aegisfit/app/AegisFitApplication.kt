@@ -25,8 +25,8 @@ class AegisFitApplication : Application(), Configuration.Provider {
             .build()
 
     override fun onCreate() {
-        HydrationReminderWorker.schedule(this)
         super.onCreate()
+        com.aegisfit.app.notification.AppNotificationScheduler.scheduleAll(this)
         scheduleCloudSync()
     }
 

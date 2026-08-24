@@ -540,8 +540,8 @@ object SeedData {
         db.execSQL("$insertPrefix ('Marshmallows', NULL, 318, 2.0, 81.0, 0.2, 0.1, 30.0, 'per serving', NULL, 0, 'Snack', NULL);")
 
         db.execSQL("""
-            INSERT INTO food_items (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, default_serving_size_g, serving_description, barcode, is_local_bd, category, image_url)
-            SELECT name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, default_serving_size_g, serving_description, barcode, is_local_bd, category, image_url
+            INSERT INTO food_items (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, default_serving_size_g, serving_description, barcode, is_local_bd, category, image_url, source, last_updated_epoch_ms)
+            SELECT name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g, fiber_per_100g, default_serving_size_g, serving_description, barcode, is_local_bd, category, image_url, 'local', 0
             FROM temp_food_items
             WHERE name NOT IN (SELECT name FROM food_items);
         """.trimIndent())
