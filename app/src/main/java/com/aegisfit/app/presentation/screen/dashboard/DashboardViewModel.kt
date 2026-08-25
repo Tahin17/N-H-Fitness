@@ -27,6 +27,9 @@ import com.aegisfit.app.domain.model.WeightLog
 import java.util.Calendar
 import javax.inject.Inject
 
+import com.aegisfit.app.domain.repository.DailyCareRepository
+import com.aegisfit.app.domain.model.DailyCareSummary
+
 data class DailyStats(
     val caloriesConsumed: Double = 0.0,
     val calorieTarget: Int = 0,
@@ -40,20 +43,35 @@ data class DailyStats(
     val weightliftingCaloriesBurned: Double = 0.0,
     val skincareAmDone: Boolean = false,
     val skincarePmDone: Boolean = false,
+    val dailyCareCompleted: Int = 0,
+    val dailyCareTotal: Int = 0,
     val todayWeightKg: Double? = null,
     val hasLoggedWeight: Boolean = false,
+    val dayProgressScore: Int = 0,
+    val completedGoalsCount: Int = 0,
+    val totalGoalsCount: Int = 4,
     val recoveryScore: Int = 0,
     val hasRecoveryEstimate: Boolean = false
 )
 
 data class WeeklyStats(
     val workoutDays: List<Long> = emptyList(),
+    val weightDays: List<Long> = emptyList(),
+    val weightLogs: List<WeightLog> = emptyList(),
+    val avgWeightKg: Double? = null,
+    val latestWeightKg: Double? = null,
     val totalCalories: Double = 0.0,
     val daysElapsed: Int = 1
 )
 
 data class MonthlyStats(
     val workoutDays: List<Long> = emptyList(),
+    val weightDays: List<Long> = emptyList(),
+    val weightLogs: List<WeightLog> = emptyList(),
+    val avgWeightKg: Double? = null,
+    val startWeightKg: Double? = null,
+    val latestWeightKg: Double? = null,
+    val weightChangeKg: Double? = null,
     val totalCalories: Double = 0.0,
     val daysElapsed: Int = 1
 )
@@ -77,17 +95,28 @@ data class DashboardState(
 )
 
 data class SelectedDayStats(
-    val calories: Double,
-    val weightKg: Double?,
-    val waterMl: Long,
-    val completedSets: Int,
-    val cardioCaloriesBurned: Double,
-    val skincareAmDone: Boolean,
-    val skincarePmDone: Boolean
+    val dateMillis: Long = 0L,
+    val formattedDate: String = "",
+    val calories: Double = 0.0,
+    val calorieTarget: Int = 2000,
+    val proteinG: Double = 0.0,
+    val carbsG: Double = 0.0,
+    val fatG: Double = 0.0,
+    val weightKg: Double? = null,
+    val waterMl: Long = 0L,
+    val waterGoalMl: Int = 3500,
+    val completedSets: Int = 0,
+    val cardioCaloriesBurned: Double = 0.0,
+    val weightliftingCaloriesBurned: Double = 0.0,
+    val skincareAmDone: Boolean = false,
+    val skincarePmDone: Boolean = false,
+    val dailyCareCompleted: Int = 0,
+    val dailyCareTotal: Int = 0,
+    val isLoading: Boolean = false
 )
 
 private data class NutritionData(val calories: Double, val protein: Double, val carbs: Double, val fat: Double)
-private data class StatusData(val waterMl: Long, val completedSets: Int, val skinLogs: List<SkincareLog>, val cardioCals: Double)
+private data class StatusData(val waterMl: Long, val completedSets: Int, val skinLogs: List<SkincareLog>, val cardioCals: Double, val careSummary: DailyCareSummary)
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -97,6 +126,7 @@ class DashboardViewModel @Inject constructor(
     private val hydrationRepository: HydrationRepository,
     private val workoutRepository: WorkoutRepository,
     private val skincareRepository: SkincareRepository,
+    private val dailyCareRepository: DailyCareRepository,
     private val calculateBmiUseCase: CalculateBmiUseCase,
     private val calculateTdeeUseCase: CalculateTdeeUseCase,
     private val calculateCalorieTargetUseCase: CalculateCalorieTargetUseCase
@@ -170,9 +200,10 @@ class DashboardViewModel @Inject constructor(
                     hydrationRepository.getTotalForDate(userId, today),
                     workoutRepository.getCompletedSetsCountForDate(userId, today),
                     skincareRepository.getAllLogsForDate(userId, today),
-                    workoutRepository.getCardioCaloriesForDate(userId, today)
-                ) { water, sets, skinLogs, cardioCals ->
-                    StatusData(water ?: 0L, sets, skinLogs, cardioCals)
+                    workoutRepository.getCardioCaloriesForDate(userId, today),
+                    dailyCareRepository.getDailyCareSummary(userId, today)
+                ) { water, sets, skinLogs, cardioCals, careSummary ->
+                    StatusData(water ?: 0L, sets, skinLogs, cardioCals, careSummary)
                 }
 
                 combine(
@@ -185,7 +216,7 @@ class DashboardViewModel @Inject constructor(
                     val calorieTarget = profile?.let {
                         calculateCalorieTargetUseCase(
                             currentWeightKg = it.weightKg,
-                            goalWeightKg = it.goalWeightKg,
+                            goalWeightKg = profile.goalWeightKg,
                             heightCm = it.heightCm,
                             age = it.age,
                             gender = it.gender,
@@ -206,6 +237,17 @@ class DashboardViewModel @Inject constructor(
                         cardioCalories = status.cardioCals
                     )
 
+                    val hasLogged = _state.value.daily.hasLoggedWeight
+                    val (progress, completed) = calculateDayProgress(
+                        caloriesConsumed = nutrition.calories,
+                        calorieTarget = calorieTarget,
+                        waterMl = status.waterMl,
+                        waterGoalMl = _state.value.daily.waterGoalMl,
+                        completedSets = status.completedSets,
+                        cardioCalories = status.cardioCals,
+                        hasLoggedWeight = hasLogged
+                    )
+
                     _state.value.daily.copy(
                         caloriesConsumed = nutrition.calories,
                         calorieTarget = calorieTarget,
@@ -218,6 +260,10 @@ class DashboardViewModel @Inject constructor(
                         weightliftingCaloriesBurned = weightliftingCals,
                         skincareAmDone = amDone,
                         skincarePmDone = pmDone,
+                        dailyCareCompleted = status.careSummary.completedCount,
+                        dailyCareTotal = status.careSummary.totalCount,
+                        dayProgressScore = progress,
+                        completedGoalsCount = completed,
                         recoveryScore = recovery.score,
                         hasRecoveryEstimate = recovery.hasEnoughData
                     )
@@ -226,16 +272,25 @@ class DashboardViewModel @Inject constructor(
                 }
             }
             
-            // Weekly Stats
+            // Weekly Stats with Weight Logs
             launch {
                 val endDate = DateUtils.endOfDay(today)
                 val daysElapsed = DateUtils.daysInRange(weekStart, today).size
                 combine(
                     workoutRepository.getWorkoutDatesInRange(userId, weekStart, endDate),
-                    nutritionRepository.getTotalCaloriesInRange(userId, weekStart, endDate)
-                ) { workoutDates, totalCal ->
+                    nutritionRepository.getTotalCaloriesInRange(userId, weekStart, endDate),
+                    userRepository.getRecentWeightLogs(userId, 30)
+                ) { workoutDates, totalCal, recentLogs ->
+                    val weekLogs = recentLogs.filter { it.date >= weekStart && it.date <= endDate }.sortedBy { it.date }
+                    val weightDays = weekLogs.map { DateUtils.startOfDay(it.date) }
+                    val avgWeight = if (weekLogs.isNotEmpty()) weekLogs.map { it.weightKg }.average() else null
+                    val latestWeight = weekLogs.lastOrNull()?.weightKg
                     WeeklyStats(
                         workoutDays = workoutDates,
+                        weightDays = weightDays,
+                        weightLogs = weekLogs,
+                        avgWeightKg = avgWeight,
+                        latestWeightKg = latestWeight,
                         totalCalories = totalCal ?: 0.0,
                         daysElapsed = daysElapsed
                     )
@@ -244,16 +299,29 @@ class DashboardViewModel @Inject constructor(
                 }
             }
             
-            // Monthly Stats
+            // Monthly Stats with Weight Progress
             launch {
                 val endDate = DateUtils.endOfDay(today)
                 val daysElapsed = DateUtils.dayOfMonth(today)
                 combine(
                     workoutRepository.getWorkoutDatesInRange(userId, monthStart, endDate),
-                    nutritionRepository.getTotalCaloriesInRange(userId, monthStart, endDate)
-                ) { workoutDates, totalCal ->
+                    nutritionRepository.getTotalCaloriesInRange(userId, monthStart, endDate),
+                    userRepository.getRecentWeightLogs(userId, 60)
+                ) { workoutDates, totalCal, recentLogs ->
+                    val monthLogs = recentLogs.filter { it.date >= monthStart && it.date <= endDate }.sortedBy { it.date }
+                    val weightDays = monthLogs.map { DateUtils.startOfDay(it.date) }
+                    val avgWeight = if (monthLogs.isNotEmpty()) monthLogs.map { it.weightKg }.average() else null
+                    val startWeight = monthLogs.firstOrNull()?.weightKg
+                    val latestWeight = monthLogs.lastOrNull()?.weightKg
+                    val weightChange = if (startWeight != null && latestWeight != null) latestWeight - startWeight else null
                     MonthlyStats(
                         workoutDays = workoutDates,
+                        weightDays = weightDays,
+                        weightLogs = monthLogs,
+                        avgWeightKg = avgWeight,
+                        startWeightKg = startWeight,
+                        latestWeightKg = latestWeight,
+                        weightChangeKg = weightChange,
                         totalCalories = totalCal ?: 0.0,
                         daysElapsed = daysElapsed
                     )
@@ -266,10 +334,22 @@ class DashboardViewModel @Inject constructor(
             launch {
                 userRepository.getWeightLogForDate(userId, today).collect { weightLog ->
                     _state.update {
+                        val hasLogged = weightLog != null
+                        val (progress, completed) = calculateDayProgress(
+                            caloriesConsumed = it.daily.caloriesConsumed,
+                            calorieTarget = it.daily.calorieTarget,
+                            waterMl = it.daily.waterMl,
+                            waterGoalMl = it.daily.waterGoalMl,
+                            completedSets = it.daily.completedSets,
+                            cardioCalories = it.daily.cardioCaloriesBurned,
+                            hasLoggedWeight = hasLogged
+                        )
                         it.copy(
                             daily = it.daily.copy(
                                 todayWeightKg = weightLog?.weightKg,
-                                hasLoggedWeight = weightLog != null
+                                hasLoggedWeight = hasLogged,
+                                dayProgressScore = progress,
+                                completedGoalsCount = completed
                             )
                         )
                     }
@@ -283,6 +363,35 @@ class DashboardViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun calculateDayProgress(
+        caloriesConsumed: Double,
+        calorieTarget: Int,
+        waterMl: Long,
+        waterGoalMl: Int,
+        completedSets: Int,
+        cardioCalories: Double,
+        hasLoggedWeight: Boolean
+    ): Pair<Int, Int> {
+        val isCalorieMet = calorieTarget > 0 && caloriesConsumed >= (calorieTarget * 0.85)
+        val isWaterMet = waterGoalMl > 0 && waterMl >= waterGoalMl
+        val isWorkoutMet = completedSets > 0 || cardioCalories > 0
+        val isWeightMet = hasLoggedWeight
+
+        var completedGoals = 0
+        if (isCalorieMet) completedGoals++
+        if (isWaterMet) completedGoals++
+        if (isWorkoutMet) completedGoals++
+        if (isWeightMet) completedGoals++
+
+        val calProgress = if (calorieTarget > 0) (caloriesConsumed / calorieTarget).coerceIn(0.0, 1.0) else 0.0
+        val waterProgress = if (waterGoalMl > 0) (waterMl.toDouble() / waterGoalMl).coerceIn(0.0, 1.0) else 0.0
+        val workoutProgress = if (isWorkoutMet) 1.0 else 0.0
+        val weightProgress = if (isWeightMet) 1.0 else 0.0
+
+        val progressPercent = ((calProgress + waterProgress + workoutProgress + weightProgress) / 4.0 * 100.0).toInt().coerceIn(0, 100)
+        return Pair(progressPercent, completedGoals)
     }
 
     fun selectTab(index: Int) {
@@ -300,55 +409,137 @@ class DashboardViewModel @Inject constructor(
     fun saveWeight(weightKg: Double) {
         if (!weightKg.isFinite() || weightKg !in 30.0..350.0 || userId.isBlank()) return
         val today = DateUtils.todayStartMillis()
+        saveWeightForDate(today, weightKg)
+        _state.update { it.copy(showWeightDialog = false) }
+    }
+
+    fun saveWeightForDate(dayMillis: Long, weightKg: Double) {
+        if (!weightKg.isFinite() || weightKg !in 30.0..350.0 || userId.isBlank()) return
+        val today = DateUtils.todayStartMillis()
+        val normalizedDate = DateUtils.startOfDay(dayMillis)
         viewModelScope.launch {
-            userRepository.saveWeightLog(WeightLog(userId = userId, date = today, weightKg = weightKg))
-            _state.update {
-                it.copy(
-                    showWeightDialog = false,
-                    daily = it.daily.copy(todayWeightKg = weightKg, hasLoggedWeight = true)
-                )
+            userRepository.saveWeightLog(WeightLog(userId = userId, date = normalizedDate, weightKg = weightKg))
+            if (normalizedDate == today) {
+                _state.update {
+                    val (progress, completed) = calculateDayProgress(
+                        caloriesConsumed = it.daily.caloriesConsumed,
+                        calorieTarget = it.daily.calorieTarget,
+                        waterMl = it.daily.waterMl,
+                        waterGoalMl = it.daily.waterGoalMl,
+                        completedSets = it.daily.completedSets,
+                        cardioCalories = it.daily.cardioCaloriesBurned,
+                        hasLoggedWeight = true
+                    )
+                    it.copy(
+                        daily = it.daily.copy(
+                            todayWeightKg = weightKg,
+                            hasLoggedWeight = true,
+                            dayProgressScore = progress,
+                            completedGoalsCount = completed
+                        )
+                    )
+                }
+                val profile = userRepository.getUserProfileOnce(userId)
+                if (profile != null) {
+                    val newTarget = calculateCalorieTargetUseCase(
+                        currentWeightKg = weightKg,
+                        goalWeightKg = profile.goalWeightKg,
+                        heightCm = profile.heightCm,
+                        age = profile.age,
+                        gender = profile.gender,
+                        activityLevel = profile.activityLevel
+                    )
+                    userRepository.saveUserProfile(profile.copy(weightKg = weightKg, dailyCalorieTarget = newTarget))
+                }
             }
-            // Also update user profile weight and dynamic target
-            val profile = userRepository.getUserProfileOnce(userId)
-            if (profile != null) {
-                val newTarget = calculateCalorieTargetUseCase(
-                    currentWeightKg = weightKg,
-                    goalWeightKg = profile.goalWeightKg,
-                    heightCm = profile.heightCm,
-                    age = profile.age,
-                    gender = profile.gender,
-                    activityLevel = profile.activityLevel
-                )
-                userRepository.saveUserProfile(profile.copy(weightKg = weightKg, dailyCalorieTarget = newTarget))
+            // Refresh day summary if open
+            if (_state.value.selectedMonthDay == normalizedDate) {
+                selectMonthDay(normalizedDate)
             }
         }
     }
 
     fun selectMonthDay(dayMillis: Long) {
-        _state.update { it.copy(selectedMonthDay = dayMillis, showMonthDayDialog = true, selectedMonthDayStats = null) }
+        val normalizedDay = DateUtils.startOfDay(dayMillis)
+        val dateFormatted = DateUtils.formatFullDate(normalizedDay)
+        val target = _state.value.daily.calorieTarget.takeIf { it > 0 } ?: 2000
+        val waterGoal = _state.value.daily.waterGoalMl
+
+        _state.update {
+            it.copy(
+                selectedMonthDay = normalizedDay,
+                showMonthDayDialog = true,
+                selectedMonthDayStats = SelectedDayStats(
+                    dateMillis = normalizedDay,
+                    formattedDate = dateFormatted,
+                    calorieTarget = target,
+                    waterGoalMl = waterGoal,
+                    isLoading = true
+                )
+            )
+        }
+
         viewModelScope.launch {
-            val calories = nutritionRepository.getTotalCaloriesForDate(userId, dayMillis).firstOrNull() ?: 0.0
-            val weightLog = userRepository.getWeightLogForDate(userId, dayMillis).firstOrNull()
-            val water = hydrationRepository.getTotalForDate(userId, dayMillis).firstOrNull() ?: 0L
-            val sets = workoutRepository.getCompletedSetsCountForDate(userId, dayMillis).firstOrNull() ?: 0
-            val cardioCals = workoutRepository.getCardioCaloriesForDate(userId, dayMillis).firstOrNull() ?: 0.0
-            val skinLogs = skincareRepository.getAllLogsForDate(userId, dayMillis).firstOrNull() ?: emptyList()
+            val calories = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                nutritionRepository.getTotalCaloriesForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0.0
+            val protein = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                nutritionRepository.getTotalProteinForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0.0
+            val carbs = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                nutritionRepository.getTotalCarbsForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0.0
+            val fat = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                nutritionRepository.getTotalFatForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0.0
+            val weightLog = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                userRepository.getWeightLogForDate(userId, normalizedDay).firstOrNull()
+            }
+            val water = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                hydrationRepository.getTotalForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0L
+            val sets = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                workoutRepository.getCompletedSetsCountForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0
+            val cardioCals = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                workoutRepository.getCardioCaloriesForDate(userId, normalizedDay).firstOrNull()
+            } ?: 0.0
+            val skinLogs = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                skincareRepository.getAllLogsForDate(userId, normalizedDay).firstOrNull()
+            } ?: emptyList()
+            val careSummary = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                dailyCareRepository.getDailyCareSummary(userId, normalizedDay).firstOrNull()
+            } ?: DailyCareSummary()
+
             val amDone = skinLogs.filter { it.routineType == "AM" }.let { logs -> logs.isNotEmpty() && logs.all { it.completed } }
             val pmDone = skinLogs.filter { it.routineType == "PM" }.let { logs -> logs.isNotEmpty() && logs.all { it.completed } }
+            val profile = _state.value.userProfile
+            val weightliftingCals = WorkoutMetrics.estimateStrengthCalories(sets, profile?.weightKg ?: 70.0)
 
-            _state.update { 
-                if (it.selectedMonthDay == dayMillis) {
-                    it.copy(
-                        selectedMonthDayStats = SelectedDayStats(
-                            calories = calories,
-                            weightKg = weightLog?.weightKg,
-                            waterMl = water,
-                            completedSets = sets,
-                            cardioCaloriesBurned = cardioCals,
-                            skincareAmDone = amDone,
-                            skincarePmDone = pmDone
-                        )
-                    )
+            val updatedStats = SelectedDayStats(
+                dateMillis = normalizedDay,
+                formattedDate = dateFormatted,
+                calories = calories,
+                calorieTarget = target,
+                proteinG = protein,
+                carbsG = carbs,
+                fatG = fat,
+                weightKg = weightLog?.weightKg,
+                waterMl = water,
+                waterGoalMl = waterGoal,
+                completedSets = sets,
+                cardioCaloriesBurned = cardioCals,
+                weightliftingCaloriesBurned = weightliftingCals,
+                skincareAmDone = amDone,
+                skincarePmDone = pmDone,
+                dailyCareCompleted = careSummary.completedCount,
+                dailyCareTotal = careSummary.totalCount,
+                isLoading = false
+            )
+
+            _state.update {
+                if (it.selectedMonthDay == normalizedDay) {
+                    it.copy(selectedMonthDayStats = updatedStats)
                 } else it
             }
         }

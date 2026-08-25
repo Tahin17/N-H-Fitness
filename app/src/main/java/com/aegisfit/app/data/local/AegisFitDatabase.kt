@@ -27,9 +27,11 @@ import com.aegisfit.app.data.seed.SeedData
         SkinPhotoEntity::class,
         MicroActivityLogEntity::class,
         WeightLogEntity::class,
-        FoodSearchCacheEntity::class
+        FoodSearchCacheEntity::class,
+        DailyCareItemEntity::class,
+        DailyCareLogEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -49,6 +51,7 @@ abstract class AegisFitDatabase : RoomDatabase() {
     abstract fun skinPhotoDao(): SkinPhotoDao
     abstract fun microActivityDao(): MicroActivityDao
     abstract fun weightLogDao(): WeightLogDao
+    abstract fun dailyCareDao(): DailyCareDao
 
     companion object {
         val MIGRATION_6_7 = object : Migration(6, 7) {
@@ -66,6 +69,44 @@ abstract class AegisFitDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_care_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        time_slot TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        notes TEXT,
+                        time_hint TEXT,
+                        created_at_ms INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_care_items_user_id ON daily_care_items(user_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_care_items_time_slot ON daily_care_items(time_slot)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_care_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        date INTEGER NOT NULL,
+                        care_item_id INTEGER NOT NULL,
+                        completed INTEGER NOT NULL,
+                        completed_at_ms INTEGER,
+                        FOREIGN KEY (care_item_id) REFERENCES daily_care_items (id) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_care_logs_care_item_id ON daily_care_logs(care_item_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_care_logs_user_id_date ON daily_care_logs(user_id, date)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_daily_care_logs_user_id_date_care_item_id ON daily_care_logs(user_id, date, care_item_id)")
             }
         }
 
@@ -103,7 +144,7 @@ abstract class AegisFitDatabase : RoomDatabase() {
             private fun seedAllData(db: SupportSQLiteDatabase) {
                 SeedData.seedWorkoutDays(db)
                 // Food items are seeded unconditionally above
-                SeedData.seedSkincareRoutines(db)
+                // Note: Care items start clean and empty as requested
             }
         }
     }

@@ -23,7 +23,7 @@ object DatabaseModule {
             "aegisfit_database"
         )
         .addCallback(AegisFitDatabase.prepopulateCallback)
-        .addMigrations(AegisFitDatabase.MIGRATION_6_7)
+        .addMigrations(AegisFitDatabase.MIGRATION_6_7, AegisFitDatabase.MIGRATION_7_8)
         .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5)
         .build()
     }
@@ -42,4 +42,5 @@ object DatabaseModule {
     @Provides fun provideSkinPhotoDao(db: AegisFitDatabase) = db.skinPhotoDao()
     @Provides fun provideMicroActivityDao(db: AegisFitDatabase) = db.microActivityDao()
     @Provides fun provideWeightLogDao(db: AegisFitDatabase) = db.weightLogDao()
+    @Provides fun provideDailyCareDao(db: AegisFitDatabase) = db.dailyCareDao()
 }

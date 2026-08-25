@@ -99,4 +99,28 @@ object DateUtils {
         cal.timeInMillis = millis
         return cal.get(Calendar.DAY_OF_MONTH)
     }
+
+    /** Returns the 0-indexed day-of-week (0=Mon, 6=Sun) for the 1st of the current month. */
+    fun firstDayOfMonthDayOfWeekOffset(): Int {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.DAY_OF_MONTH, 1)
+        val dow = cal.get(Calendar.DAY_OF_WEEK)
+        return if (dow == Calendar.SUNDAY) 6 else dow - Calendar.MONDAY
+    }
+
+    /** Formats millis into a user-friendly date string like "Monday, Aug 24, 2026". */
+    fun formatFullDate(millis: Long): String {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = millis
+        val sdf = java.text.SimpleDateFormat("EEEE, MMM d, yyyy", java.util.Locale.getDefault())
+        return sdf.format(cal.time)
+    }
+
+    /** Formats millis into a short date string like "Aug 24". */
+    fun formatShortDate(millis: Long): String {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = millis
+        val sdf = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
+        return sdf.format(cal.time)
+    }
 }
